@@ -146,8 +146,11 @@ function preparePageHTMLForLocalBrowsing(
     return dom.serialize();
   }
 
+  const manualRootPath = options.manualRootPath;
+  const docIDToRelativePath = options.docIDToRelativePath;
+
   const normalizedDocPathMap = Object.fromEntries(
-    Object.entries(options.docIDToRelativePath).map(([k, v]) => [k, v])
+    Object.entries(docIDToRelativePath).map(([k, v]) => [k, v])
   );
 
   document.querySelectorAll("a").forEach((anchorEl) => {
@@ -162,7 +165,7 @@ function preparePageHTMLForLocalBrowsing(
     }
 
     const absoluteTargetPath = join(
-      options.manualRootPath,
+      manualRootPath,
       targetRelativePathFromRoot
     );
     const relativeTargetPath = relative(currentFolderPath, absoluteTargetPath)

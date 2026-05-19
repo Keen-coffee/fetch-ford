@@ -55,7 +55,7 @@ export default async function createWorkshopBrowser(
         display: flex;
         flex-direction: column;
         min-width: 0;
-        border-right: 1px solid var(--line);
+        border-left: 1px solid var(--line);
         background: var(--panel);
       }
 
@@ -196,7 +196,7 @@ export default async function createWorkshopBrowser(
         }
 
         .content {
-          border-right: 0;
+          border-left: 0;
           border-bottom: 1px solid var(--line);
           min-height: 52vh;
         }
@@ -212,15 +212,6 @@ export default async function createWorkshopBrowser(
   </head>
   <body>
     <div class="shell">
-      <section class="content">
-        <div class="toolbar">
-          <button id="openCover" type="button">Open Cover</button>
-          <button id="clearSelection" type="button">Clear Selection</button>
-          <div class="path" id="currentPath">cover.html</div>
-        </div>
-        <iframe id="viewer" title="Workshop content" src="cover.html"></iframe>
-      </section>
-
       <aside class="nav">
         <div class="navHeader">
           <h1>Workshop Navigation</h1>
@@ -230,6 +221,15 @@ export default async function createWorkshopBrowser(
           <ul class="tree" id="tree"></ul>
         </div>
       </aside>
+
+      <section class="content">
+        <div class="toolbar">
+          <button id="openCover" type="button">Open Cover</button>
+          <button id="clearSelection" type="button">Clear Selection</button>
+          <div class="path" id="currentPath">cover.html</div>
+        </div>
+        <iframe id="viewer" title="Workshop content" src="cover.html"></iframe>
+      </section>
     </div>
 
     <script>

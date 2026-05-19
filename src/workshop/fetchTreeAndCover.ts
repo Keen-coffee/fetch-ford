@@ -195,8 +195,16 @@ function getLocalRelativePath(
   docID: string,
   leafExtension: "pdf" | "html"
 ): string | null {
-  if (docID.startsWith("http") && docID.includes(".pdf") && leafExtension === "pdf") {
-    return posix.join(...parentSegments, basename(docID));
+  if (docID.startsWith("http") && docID.includes(".pdf")) {
+    if (leafExtension === "pdf") {
+      return posix.join(...parentSegments, basename(docID));
+    }
+
+    // In HTML-only mode, direct PDF leaves are represented by local HTML wrappers.
+    return posix.join(
+      ...parentSegments,
+      `${buildManualLeafFilename(title, docID)}.html`
+    );
   }
 
   if (docID.includes("/")) {

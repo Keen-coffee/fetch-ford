@@ -28,24 +28,30 @@ interface DiagnosticLink {
 function extractDocIDFromAnchor(anchor: HTMLAnchorElement): string | null {
   const dataFor = anchor.getAttribute("data-for");
   if (dataFor && dataFor.trim()) {
-    return dataFor.trim();
+    return dataFor.trim().toUpperCase();
   }
 
   const href = anchor.getAttribute("href") || "";
   const searchNumberMatch = href.match(/[?&]searchNumber=([A-Z0-9]+)/i);
   if (searchNumberMatch?.[1]) {
-    return searchNumberMatch[1];
+    return searchNumberMatch[1].toUpperCase();
+  }
+
+  // Common pattern in absolute Ford links where docid is embedded in path.
+  const hrefDocIDMatch = href.match(/\b([A-Z][0-9]{7})\b/i);
+  if (hrefDocIDMatch?.[1]) {
+    return hrefDocIDMatch[1].toUpperCase();
   }
 
   const onclick = anchor.getAttribute("onclick") || "";
   const onclickSearchNumberMatch = onclick.match(/searchNumber[=:]([A-Z0-9]+)/i);
   if (onclickSearchNumberMatch?.[1]) {
-    return onclickSearchNumberMatch[1];
+    return onclickSearchNumberMatch[1].toUpperCase();
   }
 
   const onclickDocIdMatch = onclick.match(/["'](G[0-9]{7})["']/i);
   if (onclickDocIdMatch?.[1]) {
-    return onclickDocIdMatch[1];
+    return onclickDocIdMatch[1].toUpperCase();
   }
 
   return null;
@@ -70,6 +76,13 @@ function preparePageHTMLForLocalBrowsing(
     return dom.serialize();
   }
 
+  const normalizedDocPathMap = Object.fromEntries(
+    Object.entries(options.docIDToRelativePath).map(([k, v]) => [
+      k.toUpperCase(),
+      v,
+    ])
+  );
+
   document.querySelectorAll("a").forEach((anchorEl) => {
     const anchor = anchorEl as HTMLAnchorElement;
     const docID = extractDocIDFromAnchor(anchor);
@@ -77,7 +90,7 @@ function preparePageHTMLForLocalBrowsing(
       return;
     }
 
-    const targetRelativePathFromRoot = options.docIDToRelativePath![docID];
+    const targetRelativePathFromRoot = normalizedDocPathMap[docID];
     if (!targetRelativePathFromRoot) {
       return;
     }

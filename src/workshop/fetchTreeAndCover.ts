@@ -2,15 +2,23 @@ import client from "../client";
 import { stringify } from "qs";
 import { FetchManualPageParams } from "./fetchManualPage";
 import { JSDOM } from "jsdom";
+import { basename, posix } from "path";
+import { buildManualLeafFilename, sanitizeName } from "../utils";
 
 export interface FetchTreeAndCoverParams extends FetchManualPageParams {
   CategoryDescription: string;
   category: string;
 }
 
+export interface CoverLinkEntry {
+  title: string;
+  docID: string;
+  relativePath: string;
+}
+
 export default async function fetchTreeAndCover(
   params: FetchTreeAndCoverParams
-): Promise<{ tableOfContents: any; pageHTML: string }> {
+): Promise<{ tableOfContents: any; pageHTML: string; coverLinkIndex: CoverLinkEntry[] }> {
   const req = await client({
     method: "POST",
     url: `https://www.fordservicecontent.com/Ford_Content/PublicationRuntimeRefreshPTS//publication/prod_1_3_362022/TreeAndCover/workshop/${params.category}/~WS8B/${params.vehicleId}`,
@@ -95,15 +103,39 @@ interface TableOfContentsLeaf {
 function processTableOfContents(toc: string): {
   tableOfContents: any;
   pageHTML: string;
+  coverLinkIndex: CoverLinkEntry[];
 } {
   const { window } = new JSDOM(toc);
   const document = window.document;
 
-  // remove the broken filter links and add a message
+  const tree = document.getElementsByClassName("tree")[0];
+  const parsed = parseul({}, tree);
+  const coverLinkIndex = buildCoverLinkIndex(parsed);
+
+  const linkByDocID = new Map<string, string>();
+  coverLinkIndex.forEach((entry) => {
+    if (!linkByDocID.has(entry.docID)) {
+      linkByDocID.set(entry.docID, entry.relativePath);
+    }
+  });
+
+  document.querySelectorAll("a[data-for]").forEach((anchor) => {
+    const docID = anchor.getAttribute("data-for");
+    if (!docID) return;
+
+    const relativePath = linkByDocID.get(docID);
+    if (!relativePath) return;
+
+    anchor.setAttribute("href", encodeURI(relativePath));
+    anchor.setAttribute("target", "_self");
+    anchor.removeAttribute("onclick");
+  });
+
+  // Remove non-functional PTS-only controls and add a local navigation note.
   const imageElement = document.getElementById("imgCollapseTreeDiv");
   imageElement?.insertAdjacentHTML(
     "afterend",
-    "<h1><strong>Links below do not work.</strong></h1><p>This table of contents is for reference only. " +
+    "<h1><strong>Links below open local downloaded files.</strong></h1><p>This table of contents is now linkable for local browsing. " +
       "Manual downloaded using <a href='https://github.com/iamtheyammer/fetch-ford-service-manuals'>iamtheyammer's Ford manual downloader.</a> " +
       "Refer to the README for more information.</p>"
   );
@@ -112,10 +144,54 @@ function processTableOfContents(toc: string): {
   // reveal the table of contents
   document.getElementById("wsm-tree")?.attributes.removeNamedItem("style");
 
-  const tree = document.getElementsByClassName("tree")[0];
-  const parsed = parseul({}, tree);
   return {
     tableOfContents: parsed,
     pageHTML: document.documentElement.outerHTML,
+    coverLinkIndex,
   };
+}
+
+function buildCoverLinkIndex(
+  node: any,
+  parentSegments: string[] = []
+): CoverLinkEntry[] {
+  const out: CoverLinkEntry[] = [];
+
+  Object.entries(node).forEach(([name, value]) => {
+    if (typeof value === "string") {
+      const docID = value;
+      const relativePath = getLocalRelativePath(parentSegments, name, docID);
+      if (!relativePath) return;
+
+      out.push({
+        title: name,
+        docID,
+        relativePath,
+      });
+      return;
+    }
+
+    const nextSegments = [...parentSegments, sanitizeName(name)];
+    out.push(...buildCoverLinkIndex(value, nextSegments));
+  });
+
+  return out;
+}
+
+function getLocalRelativePath(
+  parentSegments: string[],
+  title: string,
+  docID: string
+): string | null {
+  if (docID.startsWith("http") && docID.includes(".pdf")) {
+    return posix.join(...parentSegments, basename(docID));
+  }
+
+  if (docID.includes("/")) {
+    // These are relative/unsupported leaves that are skipped during save.
+    return null;
+  }
+
+  const filename = `${buildManualLeafFilename(title, docID)}.pdf`;
+  return posix.join(...parentSegments, filename);
 }

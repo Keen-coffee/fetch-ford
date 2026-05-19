@@ -28,6 +28,20 @@ const removeRegex = /[$\r\n\f\v]/gm;
 export const sanitizeName = (name: string): string =>
   name.replace(dashReplaceRegex, "-").replace(removeRegex, "");
 
+// Keep file naming logic in one place so cover links match saved output paths.
+export const buildManualLeafFilename = (name: string, docID: string): string => {
+  let filename = sanitizeName(name);
+
+  // 255 is the max filename length on most filesystems, but 200 is a safe
+  // lower bound before appending truncation metadata.
+  if (filename.length > 200) {
+    filename =
+      filename.slice(0, 254 - 19 - docID.length) + ` (${docID} truncated)`;
+  }
+
+  return filename;
+};
+
 export default function saveStream(stream: any, path: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const writer = createWriteStream(path);

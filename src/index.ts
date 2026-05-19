@@ -218,7 +218,8 @@ async function modernWorkshop(
     CategoryDescription: "GSIXML",
     category: "33",
   };
-  const { tableOfContents, pageHTML } = await fetchTreeAndCover(tocFetchParams);
+  const { tableOfContents, pageHTML, coverLinkIndex } =
+    await fetchTreeAndCover(tocFetchParams);
 
   await writeFile(
     join(outputPath, "toc.json"),
@@ -234,6 +235,11 @@ async function modernWorkshop(
     config.workshop,
     browserPage,
     restArgs
+  );
+
+  await writeFile(
+    join(outputPath, "cover-link-index.json"),
+    JSON.stringify(coverLinkIndex, null, 2)
   );
 }
 

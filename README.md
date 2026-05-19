@@ -159,7 +159,9 @@ Open it in Excel or Google Sheets to see the data. Here's a quick example:
 
 The folder structure in the output directory will mimic the structure on PTS, so if a file has a path like `1: General Information -> 00: Service Information -> 100-00 General Information -> About this Manual`, it will be in the folder `outputpath/1: General Information/00: Service Information/100-00 General Information/About this Manual.pdf`.
 
-The `cover.html` file contains the book's cover and a table of contents laid out in bullet points. The tree of those bullet points directly maps to the file structure of the downloaded manual. Note that some characters are not allowed in file/folder names, so characters like slashes, colons, and more are replaced with dashes when saving.
+The `cover.html` file contains the book's cover and a table of contents laid out in bullet points. The tree of those bullet points directly maps to the file structure of the downloaded manual, and links in the table of contents point to local downloaded PDFs so you can browse from the cover page.
+
+The `cover-link-index.json` file contains linkable data generated from the cover page table of contents. Each entry includes the page title, `docID`, and local relative output path.
 
 The `toc.json` file contains the computer-readable table of contents, with the name mapped to the "document number", which is used to fetch the PDF.
 

@@ -5,7 +5,7 @@ import fetchManualPage, { FetchManualPageParams } from "./fetchManualPage";
 import client from "../client";
 import { Page } from "playwright";
 import { CLIArgs } from "../processCLIArgs";
-import saveStream, { sanitizeName } from "../utils";
+import saveStream, { buildManualLeafFilename, sanitizeName } from "../utils";
 
 export type SaveOptions = Pick<
   CLIArgs,
@@ -115,17 +115,8 @@ export default async function saveEntireManual(
         continue;
       }
 
-      let filename = sanitizeName(name);
-      // 255 is the max filename length on most filesystems, but 200 should be enough regardless
-      if (filename.length > 200) {
-        filename =
-          // 255 = max filename length, 18 = length of " ( truncated).html",
-          // docID.length = length of docID
-
-          // including the docID in the filename to prevent collisions as names may differ
-          // at the end rather than in the first ~255 characters
-          filename.slice(0, 254 - 19 - docID.length) + ` (${docID} truncated)`;
-
+      const filename = buildManualLeafFilename(name, docID);
+      if (filename !== sanitizeName(name)) {
         console.log(`-> Truncating filename, learn more in the README`);
       }
 

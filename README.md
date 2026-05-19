@@ -120,7 +120,7 @@ Before manuals start to download, the bot will validate that your cookies are co
 
 Make sure that the directory for the downloaded manual is empty-- it'll have lots of subfolders.
 
-You can get more param information by running `yarn start --help`. Notably, `--saveHTML` will save `.html` files along with the `.pdf` files downloaded by default, and `--ignoreSaveErrors` will continue downloading manuals if an error is encountered, skipping the file with an error.
+You can get more param information by running `yarn start --help`. Notably, `--saveHTML` will save `.html` files along with the `.pdf` files downloaded by default, `--htmlOnly` will skip workshop PDF generation and save HTML pages only, and `--ignoreSaveErrors` will continue downloading manuals if an error is encountered, skipping the file with an error.
 
 It can take a little while! On a fast computer with a fast internet connection, and, more importantly, a fast disk drive, over 15 minutes to download the manuals for the 2005 Taurus. Be patient!
 

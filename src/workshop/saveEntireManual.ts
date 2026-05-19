@@ -14,6 +14,7 @@ export type SaveOptions = Pick<
   | "ignoreSaveErrors"
   | "expandInteractive"
   | "followDiagnosticLinks"
+  | "htmlOnly"
 > & {
   manualRootPath?: string;
   docIDToRelativePath?: Record<string, string>;
@@ -161,6 +162,7 @@ export default async function saveEntireManual(
   browserPage: Page,
   options: SaveOptions
 ) {
+  const shouldSaveHTML = options.saveHTML || options.htmlOnly;
   const exploded = Object.entries(toc);
 
   for (let i = 0; i < exploded.length; i++) {
@@ -169,6 +171,34 @@ export default async function saveEntireManual(
     if (typeof docID === "string" && docID.length > 0) {
       // download and save document
       if (docID.startsWith("http") && docID.includes(".pdf")) {
+        if (options.htmlOnly) {
+          const filename = buildManualLeafFilename(name, docID);
+          const htmlPath = resolve(join(path, `/${filename}.html`));
+
+          if (existsSync(htmlPath)) {
+            console.log(`Skipping manual page ${name} (already exists as HTML)`);
+            continue;
+          }
+
+          console.log(`Saving PDF-backed manual page ${name} as HTML wrapper`);
+          const wrapperHTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${name}</title>
+</head>
+<body style="margin:0; font-family: Arial, sans-serif;">
+  <p style="padding:8px 12px; margin:0; border-bottom:1px solid #ddd; background:#f7f7f7;">
+    This page is served by Ford as PDF. If it does not render below, <a href="${docID}" target="_blank" rel="noopener noreferrer">open it directly</a>.
+  </p>
+  <iframe src="${docID}" title="${name}" style="width:100%; height:calc(100vh - 42px); border:0;"></iframe>
+</body>
+</html>`;
+          await writeFile(htmlPath, wrapperHTML);
+          continue;
+        }
+
         console.log(`Downloading manual PDF ${name} ${docID}`);
 
         try {
@@ -197,30 +227,36 @@ export default async function saveEntireManual(
       }
 
       const pdfPath = join(path, `/${filename}.pdf`);
+      const htmlPath = resolve(join(path, `/${filename}.html`));
       const pdfAlreadyExists = existsSync(pdfPath);
+      const htmlAlreadyExists = existsSync(htmlPath);
+
+      const outputAlreadyExists = options.htmlOnly
+        ? htmlAlreadyExists
+        : pdfAlreadyExists;
 
       // Check if we need to scan for diagnostic links even if PDF exists
       const shouldScanForLinks =
         options.followDiagnosticLinks &&
         (path.includes("Diagnosis") || path.includes("Testing"));
 
-      // Skip if PDF exists and we don't need to scan for links
-      if (pdfAlreadyExists && !shouldScanForLinks) {
+      // Skip if output already exists and we don't need to scan for links
+      if (outputAlreadyExists && !shouldScanForLinks) {
         console.log(
           `Skipping manual page ${name} (already exists) (docID: ${docID})`
         );
         continue;
       }
 
-      if (pdfAlreadyExists && shouldScanForLinks) {
+      if (outputAlreadyExists && shouldScanForLinks) {
         console.log(
-          `Skipping PDF for ${name} (already exists), but scanning for linked diagnostics (docID: ${docID})`
+          `Skipping save for ${name} (already exists), but scanning for linked diagnostics (docID: ${docID})`
         );
       } else {
         console.log(
           `Downloading manual page ${name} as ${
-            options.saveHTML ? "HTML, " : ""
-          }PDF (docID: ${docID})`
+            options.htmlOnly ? "HTML" : shouldSaveHTML ? "HTML, PDF" : "PDF"
+          } (docID: ${docID})`
         );
       }
 
@@ -236,22 +272,23 @@ export default async function saveEntireManual(
           options
         );
 
-        if (options.saveHTML) {
-          const htmlPath = resolve(join(path, `/${filename}.html`));
+        if (shouldSaveHTML) {
           await writeFile(htmlPath, pageHTMLWithLocalLinks);
         }
 
-        await browserPage.setContent(pageHTMLWithLocalLinks, {
-          waitUntil: "load",
-        });
-        // removes this little color-coded thing that doesn't load properly
-        // in Playwright, just says "Workshop Manual Graphics Training"...
-        await browserPage.evaluate(
-          'document.querySelectorAll("body > div > table > tbody > tr > td:nth-child(2)").forEach(e => e.remove())'
-        );
+        if (!options.htmlOnly) {
+          await browserPage.setContent(pageHTMLWithLocalLinks, {
+            waitUntil: "load",
+          });
+          // removes this little color-coded thing that doesn't load properly
+          // in Playwright, just says "Workshop Manual Graphics Training"...
+          await browserPage.evaluate(
+            'document.querySelectorAll("body > div > table > tbody > tr > td:nth-child(2)").forEach(e => e.remove())'
+          );
+        }
 
         // Expand interactive elements if requested
-        if (options.expandInteractive) {
+        if (options.expandInteractive && !options.htmlOnly) {
           try {
             console.log(
               `-> Expanding interactive elements for ${name} (docID: ${docID})`
@@ -347,8 +384,8 @@ export default async function saveEntireManual(
           }
         }
 
-        // Only generate PDF if it doesn't already exist
-        if (!pdfAlreadyExists) {
+        // Only generate PDF if it doesn't already exist and we're not in HTML-only mode
+        if (!options.htmlOnly && !pdfAlreadyExists) {
           await browserPage.pdf({
             path: pdfPath,
           });
@@ -378,9 +415,13 @@ export default async function saveEntireManual(
                   `${linkedDocID.title || linkedDocID.id}`
                 );
                 const linkedPdfPath = join(path, `/${linkedFilename}.pdf`);
+                const linkedHtmlPath = resolve(join(path, `/${linkedFilename}.html`));
+                const linkedOutputAlreadyExists = options.htmlOnly
+                  ? existsSync(linkedHtmlPath)
+                  : existsSync(linkedPdfPath);
 
                 // Check if already exists (resume capability)
-                if (existsSync(linkedPdfPath)) {
+                if (linkedOutputAlreadyExists) {
                   console.log(
                     `-> Skipping linked diagnostic ${
                       linkedDocID.title || linkedDocID.id
@@ -401,23 +442,22 @@ export default async function saveEntireManual(
                     searchNumber: linkedDocID.id,
                   });
 
-                  if (options.saveHTML) {
-                    const linkedHtmlPath = resolve(
-                      join(path, `/${linkedFilename}.html`)
-                    );
+                  if (shouldSaveHTML) {
                     await writeFile(linkedHtmlPath, linkedPageHTML);
                   }
 
-                  await browserPage.setContent(linkedPageHTML, {
-                    waitUntil: "load",
-                  });
-                  await browserPage.evaluate(
-                    'document.querySelectorAll("body > div > table > tbody > tr > td:nth-child(2)").forEach(e => e.remove())'
-                  );
+                  if (!options.htmlOnly) {
+                    await browserPage.setContent(linkedPageHTML, {
+                      waitUntil: "load",
+                    });
+                    await browserPage.evaluate(
+                      'document.querySelectorAll("body > div > table > tbody > tr > td:nth-child(2)").forEach(e => e.remove())'
+                    );
 
-                  await browserPage.pdf({
-                    path: linkedPdfPath,
-                  });
+                    await browserPage.pdf({
+                      path: linkedPdfPath,
+                    });
+                  }
                 } catch (linkError) {
                   console.error(
                     `-> Error downloading linked diagnostic ${linkedDocID.id}:`,

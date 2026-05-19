@@ -10,6 +10,10 @@ export interface FetchTreeAndCoverParams extends FetchManualPageParams {
   category: string;
 }
 
+interface FetchTreeAndCoverOptions {
+  leafExtension?: "pdf" | "html";
+}
+
 export interface CoverLinkEntry {
   title: string;
   docID: string;
@@ -17,7 +21,8 @@ export interface CoverLinkEntry {
 }
 
 export default async function fetchTreeAndCover(
-  params: FetchTreeAndCoverParams
+  params: FetchTreeAndCoverParams,
+  options: FetchTreeAndCoverOptions = {}
 ): Promise<{ tableOfContents: any; pageHTML: string; coverLinkIndex: CoverLinkEntry[] }> {
   const req = await client({
     method: "POST",
@@ -34,7 +39,7 @@ export default async function fetchTreeAndCover(
     }),
   });
 
-  return processTableOfContents(req.data);
+  return processTableOfContents(req.data, options.leafExtension || "pdf");
 }
 
 // recursively ignore <i> elements with only a single <i> element inside
@@ -100,7 +105,7 @@ interface TableOfContentsLeaf {
   [documentName: string]: string;
 }
 
-function processTableOfContents(toc: string): {
+function processTableOfContents(toc: string, leafExtension: "pdf" | "html"): {
   tableOfContents: any;
   pageHTML: string;
   coverLinkIndex: CoverLinkEntry[];
@@ -110,7 +115,7 @@ function processTableOfContents(toc: string): {
 
   const tree = document.getElementsByClassName("tree")[0];
   const parsed = parseul({}, tree);
-  const coverLinkIndex = buildCoverLinkIndex(parsed);
+  const coverLinkIndex = buildCoverLinkIndex(parsed, [], leafExtension);
 
   const linkByDocID = new Map<string, string>();
   coverLinkIndex.forEach((entry) => {
@@ -153,14 +158,20 @@ function processTableOfContents(toc: string): {
 
 function buildCoverLinkIndex(
   node: any,
-  parentSegments: string[] = []
+  parentSegments: string[] = [],
+  leafExtension: "pdf" | "html" = "pdf"
 ): CoverLinkEntry[] {
   const out: CoverLinkEntry[] = [];
 
   Object.entries(node).forEach(([name, value]) => {
     if (typeof value === "string") {
       const docID = value;
-      const relativePath = getLocalRelativePath(parentSegments, name, docID);
+      const relativePath = getLocalRelativePath(
+        parentSegments,
+        name,
+        docID,
+        leafExtension
+      );
       if (!relativePath) return;
 
       out.push({
@@ -172,7 +183,7 @@ function buildCoverLinkIndex(
     }
 
     const nextSegments = [...parentSegments, sanitizeName(name)];
-    out.push(...buildCoverLinkIndex(value, nextSegments));
+    out.push(...buildCoverLinkIndex(value, nextSegments, leafExtension));
   });
 
   return out;
@@ -181,9 +192,10 @@ function buildCoverLinkIndex(
 function getLocalRelativePath(
   parentSegments: string[],
   title: string,
-  docID: string
+  docID: string,
+  leafExtension: "pdf" | "html"
 ): string | null {
-  if (docID.startsWith("http") && docID.includes(".pdf")) {
+  if (docID.startsWith("http") && docID.includes(".pdf") && leafExtension === "pdf") {
     return posix.join(...parentSegments, basename(docID));
   }
 
@@ -192,6 +204,6 @@ function getLocalRelativePath(
     return null;
   }
 
-  const filename = `${buildManualLeafFilename(title, docID)}.pdf`;
+  const filename = `${buildManualLeafFilename(title, docID)}.${leafExtension}`;
   return posix.join(...parentSegments, filename);
 }

@@ -13,6 +13,7 @@ export interface CLIArgs {
   ignoreSaveErrors: boolean;
   expandInteractive: boolean;
   followDiagnosticLinks: boolean;
+  htmlOnly: boolean;
 }
 
 export default function processCLIArgs(): CLIArgs {
@@ -70,6 +71,11 @@ export default function processCLIArgs(): CLIArgs {
     },
     {
       name: "followDiagnosticLinks",
+      type: Boolean,
+      default: false,
+    },
+    {
+      name: "htmlOnly",
       type: Boolean,
       default: false,
     },
@@ -151,6 +157,12 @@ export default function processCLIArgs(): CLIArgs {
             "Follow and download linked diagnostic/pinpoint test procedures from DTC charts and diagnostic pages. Significantly increases download time and page count. Default: false.",
         },
         {
+          name: "htmlOnly",
+          typeLabel: " ",
+          description:
+            "Workshop-only mode: save pure HTML files and skip PDF generation. Best combined with --saveHTML. Default: false.",
+        },
+        {
           name: "help",
           typeLabel: " ",
           description: "Print this usage guide.",
@@ -186,6 +198,7 @@ export default function processCLIArgs(): CLIArgs {
       ignoreSaveErrors: !!options.ignoreSaveErrors,
       expandInteractive: !!options.expandInteractive,
       followDiagnosticLinks: !!options.followDiagnosticLinks,
+      htmlOnly: !!options.htmlOnly,
     };
   } catch (e: any) {
     console.error(e);

@@ -220,7 +220,9 @@ async function modernWorkshop(
     category: "33",
   };
   const { tableOfContents, pageHTML, coverLinkIndex } =
-    await fetchTreeAndCover(tocFetchParams);
+    await fetchTreeAndCover(tocFetchParams, {
+      leafExtension: restArgs.htmlOnly ? "html" : "pdf",
+    });
 
   const docIDToRelativePath = Object.fromEntries(
     coverLinkIndex.map((entry) => [entry.docID, entry.relativePath])

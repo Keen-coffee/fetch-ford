@@ -222,6 +222,13 @@ async function modernWorkshop(
       leafExtension: restArgs.htmlOnly ? "html" : "pdf",
     });
 
+  console.log(`Workshop tree entries discovered: ${downloadIndex.length}`);
+  if (downloadIndex.length === 0) {
+    console.warn(
+      "No downloadable workshop leaves were discovered from TreeAndCover. Check workshop-tree.json and params capture."
+    );
+  }
+
   const docIDToRelativePath = Object.fromEntries(
     downloadIndex.flatMap((entry) => {
       const relativePath = restArgs.htmlOnly

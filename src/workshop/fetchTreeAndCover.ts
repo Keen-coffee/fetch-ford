@@ -170,31 +170,45 @@ function collectDirectChildrenByTag(parent: Element, tag: string): Element[] {
   );
 }
 
-function getPrimaryAnchor(li: Element): HTMLAnchorElement | null {
-  const anchors = collectDirectChildrenByTag(li, "a");
-  if (anchors.length === 0) {
-    return null;
+function findTopLevelTagThroughIconWrappers(
+  parent: Element,
+  tag: string
+): Element | null {
+  const wanted = tag.toLowerCase();
+
+  const queue: Element[] = [parent];
+  while (queue.length > 0) {
+    const node = queue.shift()!;
+
+    for (const child of Array.from(node.children)) {
+      const childTag = child.tagName.toLowerCase();
+      if (childTag === wanted) {
+        return child;
+      }
+
+      // PTS markup frequently wraps top-level elements in unclosed/self-closing icon tags.
+      if (childTag === "i") {
+        queue.push(child);
+      }
+    }
   }
 
-  return anchors[0] as HTMLAnchorElement;
+  return null;
+}
+
+function getPrimaryAnchor(li: Element): HTMLAnchorElement | null {
+  const anchor = findTopLevelTagThroughIconWrappers(li, "a");
+  return anchor as HTMLAnchorElement | null;
 }
 
 function getBranchSpan(li: Element): HTMLSpanElement | null {
-  const spans = collectDirectChildrenByTag(li, "span");
-  if (spans.length === 0) {
-    return null;
-  }
-
-  return spans[0] as HTMLSpanElement;
+  const span = findTopLevelTagThroughIconWrappers(li, "span");
+  return span as HTMLSpanElement | null;
 }
 
 function getBranchChildList(li: Element): HTMLUListElement | null {
-  const uls = collectDirectChildrenByTag(li, "ul");
-  if (uls.length === 0) {
-    return null;
-  }
-
-  return uls[0] as HTMLUListElement;
+  const ul = findTopLevelTagThroughIconWrappers(li, "ul");
+  return ul as HTMLUListElement | null;
 }
 
 function isUrlLike(value: string): boolean {

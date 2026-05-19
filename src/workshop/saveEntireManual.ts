@@ -29,6 +29,24 @@ interface DiagnosticLink {
   title?: string;
 }
 
+function resolveWorkshopURL(rawURL: string): string {
+  if (rawURL.startsWith("http://") || rawURL.startsWith("https://")) {
+    return rawURL;
+  }
+
+  // PTS quick links often provide /publication/... paths that are relative to
+  // the PublicationRuntimeRefreshPTS app root, not the site root.
+  if (rawURL.startsWith("/publication/")) {
+    return `https://www.fordservicecontent.com/Ford_Content/PublicationRuntimeRefreshPTS//${rawURL.replace(/^\//, "")}`;
+  }
+
+  if (rawURL.startsWith("/")) {
+    return `https://www.fordservicecontent.com${rawURL}`;
+  }
+
+  return `https://www.fordservicecontent.com/${rawURL}`;
+}
+
 function buildProcedureRequestPayload(
   params: FetchManualPageParams,
   entry: WorkshopDownloadEntry,
@@ -271,37 +289,47 @@ export default async function saveEntireManual(
           throw new Error(`Missing URL for entry ${entry.id}`);
         }
 
-        const url = entry.url.startsWith("http")
-          ? entry.url
-          : `https://www.fordservicecontent.com${entry.url}`;
+        const url = resolveWorkshopURL(entry.url);
 
-        if (/\.pdf(?:$|\?)/i.test(url) && !options.htmlOnly) {
-          console.log(`Downloading workshop PDF ${entry.title} (${url})`);
-          const pdfReq = await client({
+        try {
+          if (/\.pdf(?:$|\?)/i.test(url) && !options.htmlOnly) {
+            console.log(`Downloading workshop PDF ${entry.title} (${url})`);
+            const pdfReq = await client({
+              url,
+              responseType: "stream",
+            });
+            await saveStream(pdfReq.data, pdfPath);
+            continue;
+          }
+
+          console.log(`Downloading workshop URL page ${entry.title} (${url})`);
+          const pageReq = await client({
             url,
-            responseType: "stream",
+            responseType: "text",
           });
-          await saveStream(pdfReq.data, pdfPath);
-          continue;
-        }
 
-        console.log(`Downloading workshop URL page ${entry.title} (${url})`);
-        const pageReq = await client({
-          url,
-          responseType: "text",
-        });
+          const pageHTML = preparePageHTMLForLocalBrowsing(
+            String(pageReq.data),
+            folderPath,
+            options
+          );
 
-        const pageHTML = preparePageHTMLForLocalBrowsing(
-          String(pageReq.data),
-          folderPath,
-          options
-        );
+          await writeFile(htmlPath, pageHTML);
 
-        await writeFile(htmlPath, pageHTML);
+          if (!options.htmlOnly) {
+            await browserPage.setContent(pageHTML, { waitUntil: "load" });
+            await browserPage.pdf({ path: pdfPath });
+          }
+        } catch (urlError) {
+          const status = (urlError as any)?.response?.status;
+          if (status === 404) {
+            console.warn(
+              `Skipping URL leaf ${entry.title} due to 404 (${url})`
+            );
+            continue;
+          }
 
-        if (!options.htmlOnly) {
-          await browserPage.setContent(pageHTML, { waitUntil: "load" });
-          await browserPage.pdf({ path: pdfPath });
+          throw urlError;
         }
 
         continue;

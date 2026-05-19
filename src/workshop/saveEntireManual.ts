@@ -197,6 +197,37 @@ function preparePageHTMLForLocalBrowsing(
   return dom.serialize();
 }
 
+function expandInteractiveHTML(html: string): string {
+  const dom = new JSDOM(html);
+  const document = dom.window.document;
+
+  document.querySelectorAll('div[id^="PPT"]').forEach((div) => {
+    (div as HTMLElement).style.display = "block";
+  });
+
+  document
+    .querySelectorAll('tr[data-content-type="step"]')
+    .forEach((row) => {
+      (row as HTMLElement).style.display = "";
+    });
+
+  document
+    .querySelectorAll('a[data-pptlinktype="clickfordetails"]')
+    .forEach((link) => {
+      (link as HTMLElement).style.display = "none";
+      const nextSpan = link.nextElementSibling;
+      if (nextSpan && nextSpan.tagName === "SPAN") {
+        (nextSpan as HTMLElement).style.display = "inline";
+      }
+    });
+
+  document.querySelectorAll(".isipppt").forEach((el) => {
+    (el as HTMLElement).setAttribute("aria-expanded", "true");
+  });
+
+  return dom.serialize();
+}
+
 function extractDiagnosticLinks(html: string): DiagnosticLink[] {
   const links: DiagnosticLink[] = [];
   const seen = new Set<string>();
@@ -290,9 +321,30 @@ export default async function saveEntireManual(
         }
 
         const url = resolveWorkshopURL(entry.url);
+        const isPdfUrl = /\.pdf(?:$|\?)/i.test(url);
 
         try {
-          if (/\.pdf(?:$|\?)/i.test(url) && !options.htmlOnly) {
+          if (isPdfUrl && options.htmlOnly) {
+            const wrapperHTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${entry.title}</title>
+</head>
+<body style="margin:0; font-family: Arial, sans-serif;">
+  <p style="padding:8px 12px; margin:0; border-bottom:1px solid #ddd; background:#f7f7f7;">
+    This item is served by Ford as PDF. If it does not render below, <a href="${url}" target="_blank" rel="noopener noreferrer">open it directly</a>.
+  </p>
+  <iframe src="${url}" title="${entry.title}" style="width:100%; height:calc(100vh - 42px); border:0;"></iframe>
+</body>
+</html>`;
+
+            await writeFile(htmlPath, wrapperHTML);
+            continue;
+          }
+
+          if (isPdfUrl && !options.htmlOnly) {
             console.log(`Downloading workshop PDF ${entry.title} (${url})`);
             const pdfReq = await client({
               url,
@@ -343,11 +395,14 @@ export default async function saveEntireManual(
 
       const request = buildProcedureRequestPayload(fetchPageParams, entry);
       const pageHTML = await fetchManualPage(request);
-      const pageHTMLWithLocalLinks = preparePageHTMLForLocalBrowsing(
+      const localLinkedHTML = preparePageHTMLForLocalBrowsing(
         pageHTML,
         folderPath,
         options
       );
+      const pageHTMLWithLocalLinks = options.expandInteractive
+        ? expandInteractiveHTML(localLinkedHTML)
+        : localLinkedHTML;
 
       if (shouldSaveHTML) {
         await writeFile(htmlPath, pageHTMLWithLocalLinks);
@@ -393,11 +448,14 @@ export default async function saveEntireManual(
               link.id
             );
             const linkedPageHTML = await fetchManualPage(linkedRequest);
-            const linkedPageHTMLWithLocalLinks = preparePageHTMLForLocalBrowsing(
+            const linkedLocalLinkedHTML = preparePageHTMLForLocalBrowsing(
               linkedPageHTML,
               folderPath,
               options
             );
+            const linkedPageHTMLWithLocalLinks = options.expandInteractive
+              ? expandInteractiveHTML(linkedLocalLinkedHTML)
+              : linkedLocalLinkedHTML;
 
             if (shouldSaveHTML) {
               await writeFile(linkedHtmlPath, linkedPageHTMLWithLocalLinks);

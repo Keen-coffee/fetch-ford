@@ -219,7 +219,7 @@ async function modernWorkshop(
   };
   const { tableOfContents, tree, pageHTML, coverLinkIndex, downloadIndex } =
     await fetchTreeAndCover(tocFetchParams, {
-      leafExtension: restArgs.htmlOnly ? "html" : "pdf",
+      leafExtension: restArgs.htmlOnly || restArgs.saveHTML ? "html" : "pdf",
     });
 
   console.log(`Workshop tree entries discovered: ${downloadIndex.length}`);
@@ -231,7 +231,7 @@ async function modernWorkshop(
 
   const docIDToRelativePath = Object.fromEntries(
     downloadIndex.flatMap((entry) => {
-      const relativePath = restArgs.htmlOnly
+      const relativePath = restArgs.htmlOnly || restArgs.saveHTML
         ? entry.localRelativePathHtml
         : entry.localRelativePathPdf;
 

@@ -130,10 +130,22 @@ function extractLookupKeysFromAnchor(anchor: HTMLAnchorElement): string[] {
   }
 
   const href = anchor.getAttribute("href") || "";
+  const hrefHashDocIdMatch = href.match(/#([A-Z][0-9]{7})/i);
+  if (hrefHashDocIdMatch?.[1]) {
+    keys.push(hrefHashDocIdMatch[1]);
+    keys.push(hrefHashDocIdMatch[1].toUpperCase());
+  }
+
   const searchNumberMatch = href.match(/[?&]searchNumber=([A-Z0-9]+)/i);
   if (searchNumberMatch?.[1]) {
     keys.push(searchNumberMatch[1]);
     keys.push(searchNumberMatch[1].toUpperCase());
+  }
+
+  const hrefDocIdMatch = href.match(/([A-Z][0-9]{7})/i);
+  if (hrefDocIdMatch?.[1]) {
+    keys.push(hrefDocIdMatch[1]);
+    keys.push(hrefDocIdMatch[1].toUpperCase());
   }
 
   const onclick = anchor.getAttribute("onclick") || "";

@@ -1,11 +1,12 @@
 import { mkdir, writeFile } from "fs/promises";
 import { existsSync } from "fs";
-import { join, resolve } from "path";
+import { join, relative, resolve } from "path";
 import fetchManualPage, { FetchManualPageParams } from "./fetchManualPage";
 import client from "../client";
 import { Page } from "playwright";
 import { CLIArgs } from "../processCLIArgs";
 import saveStream, { buildManualLeafFilename, sanitizeName } from "../utils";
+import { JSDOM } from "jsdom";
 
 export type SaveOptions = Pick<
   CLIArgs,
@@ -13,11 +14,86 @@ export type SaveOptions = Pick<
   | "ignoreSaveErrors"
   | "expandInteractive"
   | "followDiagnosticLinks"
->;
+> & {
+  manualRootPath?: string;
+  docIDToRelativePath?: Record<string, string>;
+};
 
 interface DiagnosticLink {
   id: string;
   title?: string;
+}
+
+function extractDocIDFromAnchor(anchor: HTMLAnchorElement): string | null {
+  const dataFor = anchor.getAttribute("data-for");
+  if (dataFor && dataFor.trim()) {
+    return dataFor.trim();
+  }
+
+  const href = anchor.getAttribute("href") || "";
+  const searchNumberMatch = href.match(/[?&]searchNumber=([A-Z0-9]+)/i);
+  if (searchNumberMatch?.[1]) {
+    return searchNumberMatch[1];
+  }
+
+  const onclick = anchor.getAttribute("onclick") || "";
+  const onclickSearchNumberMatch = onclick.match(/searchNumber[=:]([A-Z0-9]+)/i);
+  if (onclickSearchNumberMatch?.[1]) {
+    return onclickSearchNumberMatch[1];
+  }
+
+  const onclickDocIdMatch = onclick.match(/["'](G[0-9]{7})["']/i);
+  if (onclickDocIdMatch?.[1]) {
+    return onclickDocIdMatch[1];
+  }
+
+  return null;
+}
+
+function preparePageHTMLForLocalBrowsing(
+  html: string,
+  currentFolderPath: string,
+  options: SaveOptions
+): string {
+  const dom = new JSDOM(html);
+  const document = dom.window.document;
+
+  // Helps relative assets resolve correctly while rendering in Playwright.
+  if (document.head && !document.querySelector("head > base")) {
+    const base = document.createElement("base");
+    base.setAttribute("href", "https://www.fordservicecontent.com/");
+    document.head.prepend(base);
+  }
+
+  if (!options.manualRootPath || !options.docIDToRelativePath) {
+    return dom.serialize();
+  }
+
+  document.querySelectorAll("a").forEach((anchorEl) => {
+    const anchor = anchorEl as HTMLAnchorElement;
+    const docID = extractDocIDFromAnchor(anchor);
+    if (!docID) {
+      return;
+    }
+
+    const targetRelativePathFromRoot = options.docIDToRelativePath![docID];
+    if (!targetRelativePathFromRoot) {
+      return;
+    }
+
+    const absoluteTargetPath = join(
+      options.manualRootPath!,
+      targetRelativePathFromRoot
+    );
+    const relativeTargetPath = relative(currentFolderPath, absoluteTargetPath)
+      .replaceAll("\\", "/");
+
+    anchor.setAttribute("href", encodeURI(relativeTargetPath));
+    anchor.setAttribute("target", "_self");
+    anchor.removeAttribute("onclick");
+  });
+
+  return dom.serialize();
 }
 
 // Extract diagnostic/pinpoint test link docIDs from HTML
@@ -154,12 +230,20 @@ export default async function saveEntireManual(
           searchNumber: docID,
         });
 
+        const pageHTMLWithLocalLinks = preparePageHTMLForLocalBrowsing(
+          pageHTML,
+          path,
+          options
+        );
+
         if (options.saveHTML) {
           const htmlPath = resolve(join(path, `/${filename}.html`));
-          await writeFile(htmlPath, pageHTML);
+          await writeFile(htmlPath, pageHTMLWithLocalLinks);
         }
 
-        await browserPage.setContent(pageHTML, { waitUntil: "load" });
+        await browserPage.setContent(pageHTMLWithLocalLinks, {
+          waitUntil: "load",
+        });
         // removes this little color-coded thing that doesn't load properly
         // in Playwright, just says "Workshop Manual Graphics Training"...
         await browserPage.evaluate(

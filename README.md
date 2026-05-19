@@ -163,6 +163,10 @@ The `cover.html` file contains the book's cover and a table of contents laid out
 
 The `cover-link-index.json` file contains linkable data generated from the cover page table of contents. Each entry includes the page title, `docID`, and local relative output path.
 
+If you run with `--saveHTML`, workshop page HTML files are also rewritten for local navigation where possible: in-page links that point to known workshop documents are converted to local file links.
+
+The `workshop-browser.html` file provides a local PTS-like layout: a chapter/navigation tree on one side and a content pane on the other. Open this file to browse downloaded content similarly to the Workshop view in PTS.
+
 The `toc.json` file contains the computer-readable table of contents, with the name mapped to the "document number", which is used to fetch the PDF.
 
 #### Truncated filenames

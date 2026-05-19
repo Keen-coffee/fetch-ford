@@ -10,6 +10,7 @@ import transformCookieString from "./transformCookieString";
 import { chromium, Page, BrowserContext } from "playwright";
 import { join } from "path";
 import saveEntireManual from "./workshop/saveEntireManual";
+import createWorkshopBrowser from "./workshop/createWorkshopBrowser";
 import readConfig, { Config } from "./readConfig";
 import processCLIArgs, { CLIArgs } from "./processCLIArgs";
 import fetchPre2003AlphabeticalIndex from "./pre-2003/fetchAlphabeticalIndex";
@@ -221,6 +222,10 @@ async function modernWorkshop(
   const { tableOfContents, pageHTML, coverLinkIndex } =
     await fetchTreeAndCover(tocFetchParams);
 
+  const docIDToRelativePath = Object.fromEntries(
+    coverLinkIndex.map((entry) => [entry.docID, entry.relativePath])
+  );
+
   await writeFile(
     join(outputPath, "toc.json"),
     JSON.stringify(tableOfContents, null, 2)
@@ -234,13 +239,19 @@ async function modernWorkshop(
     tableOfContents,
     config.workshop,
     browserPage,
-    restArgs
+    {
+      ...restArgs,
+      manualRootPath: outputPath,
+      docIDToRelativePath,
+    }
   );
 
   await writeFile(
     join(outputPath, "cover-link-index.json"),
     JSON.stringify(coverLinkIndex, null, 2)
   );
+
+  await createWorkshopBrowser(outputPath, tableOfContents, coverLinkIndex);
 }
 
 async function pre2003Workshop(

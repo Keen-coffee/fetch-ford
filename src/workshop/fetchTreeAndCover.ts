@@ -20,6 +20,7 @@ export interface WorkshopTreeBranch {
   kind: "branch";
   title: string;
   pathSegments: string[];
+  folderSegments: string[];
   dataGroup?: string;
   dataId?: string;
   dataSubSectionName?: string;
@@ -32,6 +33,7 @@ export interface WorkshopTreeLeaf {
   id: string;
   title: string;
   pathSegments: string[];
+  folderSegments: string[];
   dataGroup?: string;
   dataFor: string;
   procUid?: string;
@@ -152,6 +154,25 @@ function parsePipeCodeList(raw: string | null): string[] {
   return normalizeCodeList(raw.split("|"));
 }
 
+function buildFolderSegment(
+  title: string,
+  dataId?: string,
+  dataGroup?: string
+): string {
+  const id = (dataId || "").trim();
+  if (id) {
+    return sanitizeName(id);
+  }
+
+  const group = (dataGroup || "").trim();
+  if (group) {
+    return sanitizeName(group);
+  }
+
+  // Some top-level PTS tree branches do not expose IDs.
+  return sanitizeName(title);
+}
+
 function mergeFeatureHints(
   inherited: FeatureHints,
   ownPrimary: string[],
@@ -225,7 +246,7 @@ function buildLeafRelativePaths(
 ): { localRelativePathPdf: string; localRelativePathHtml: string } {
   if (leafType === "procedure") {
     const leafID = searchNumber || dataFor;
-    const filename = buildManualLeafFilename(title, leafID);
+    const filename = sanitizeName(leafID);
 
     return {
       localRelativePathPdf: posix.join(...folderSegments, `${filename}.pdf`),
@@ -257,6 +278,7 @@ function buildLeafRelativePaths(
 function parseTreeList(
   ul: Element,
   parentPath: string[],
+  parentFolderSegments: string[],
   inheritedHints: FeatureHints,
   downloadIndex: WorkshopDownloadEntry[]
 ): WorkshopTreeNode[] {
@@ -279,7 +301,7 @@ function parseTreeList(
         : "procedure";
       const searchNumber = leafType === "procedure" ? dataFor : undefined;
       const url = leafType === "url" ? dataFor : undefined;
-      const folderSegments = parentPath.map((segment) => sanitizeName(segment));
+      const folderSegments = [...parentFolderSegments];
       const paths = buildLeafRelativePaths(
         folderSegments,
         title,
@@ -295,6 +317,7 @@ function parseTreeList(
         id: entryID,
         title,
         pathSegments: [...parentPath],
+        folderSegments,
         dataGroup,
         dataFor,
         procUid,
@@ -336,10 +359,13 @@ function parseTreeList(
     const ownPrimary = parsePipeCodeList(span.getAttribute("data-feature-pfcs"));
     const ownMinor = parsePipeCodeList(span.getAttribute("data-feature-mfcs"));
     const mergedHints = mergeFeatureHints(inheritedHints, ownPrimary, ownMinor);
+    const folderSegment = buildFolderSegment(title, dataId, dataGroup);
+    const nextFolderSegments = [...parentFolderSegments, folderSegment];
 
     const children = parseTreeList(
       childList,
       [...parentPath, title],
+      nextFolderSegments,
       mergedHints,
       downloadIndex
     );
@@ -348,6 +374,7 @@ function parseTreeList(
       kind: "branch",
       title,
       pathSegments: [...parentPath],
+      folderSegments: nextFolderSegments,
       dataGroup,
       dataId,
       dataSubSectionName,
@@ -393,7 +420,13 @@ function processTreeAndCoverResponse(
     minorFeatureCodes: normalizeCodeList(params.minorFeatureCodes),
   };
 
-  const parsedTree = parseTreeList(treeRoot, [], defaultFeatureHints, downloadIndex);
+  const parsedTree = parseTreeList(
+    treeRoot,
+    [],
+    [],
+    defaultFeatureHints,
+    downloadIndex
+  );
   const tableOfContents = buildSimpleTableOfContents(parsedTree);
 
   const pathBySearchNumber = new Map<string, string>();

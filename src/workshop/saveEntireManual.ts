@@ -9,7 +9,7 @@ import { WorkshopDownloadEntry } from "./fetchTreeAndCover";
 import client from "../client";
 import { Page } from "playwright";
 import { CLIArgs } from "../processCLIArgs";
-import saveStream, { buildManualLeafFilename, sanitizeName } from "../utils";
+import saveStream, { sanitizeName } from "../utils";
 import { JSDOM } from "jsdom";
 
 export type SaveOptions = Pick<
@@ -156,7 +156,8 @@ function preparePageHTMLForLocalBrowsing(
 
   if (document.head && !document.querySelector("head > base")) {
     const base = document.createElement("base");
-    base.setAttribute("href", "https://www.fordservicecontent.com/");
+    // Keep unresolved relative links local when browsing downloaded HTML.
+    base.setAttribute("href", "./");
     document.head.prepend(base);
   }
 
@@ -430,10 +431,7 @@ export default async function saveEntireManual(
             continue;
           }
 
-          const linkedFilename = buildManualLeafFilename(
-            link.title || link.id,
-            link.id
-          );
+          const linkedFilename = sanitizeName(link.id);
           const linkedHtmlPath = resolve(join(folderPath, `${linkedFilename}.html`));
           const linkedPdfPath = resolve(join(folderPath, `${linkedFilename}.pdf`));
 

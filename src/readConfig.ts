@@ -27,6 +27,12 @@ const WORKSHOP_VALIDATE_FIELDS: (keyof Config["workshop"])[] = [
   "WiringBookTitle",
 ];
 
+// These values are often legitimately stable across many vehicles/manuals.
+const WORKSHOP_FIELDS_ALLOWED_TO_MATCH_TEMPLATE: (keyof Config["workshop"])[] = [
+  "category",
+  "CategoryDescription",
+];
+
 const WIRING_VALIDATABLE_FIELDS: (keyof Config["wiring"])[] = ["environment"];
 
 export default async function readConfig(
@@ -34,9 +40,9 @@ export default async function readConfig(
   validate: boolean
 ): Promise<Config> {
   const fileContent = await readFile(path, { encoding: "utf-8" });
-  const params = JSON.parse(fileContent) as Config;
+  const params = JSON.parse(fileContent) as Partial<Config>;
 
-  if (!validate) return params;
+  if (!validate) return params as Config;
 
   let paramsValid = true;
 
@@ -53,8 +59,13 @@ export default async function readConfig(
   const templateContent = await readFile(templatePath, { encoding: "utf-8" });
   const template = JSON.parse(templateContent) as Config;
 
-  const ws = params.workshop;
+  const ws = params.workshop || ({} as Config["workshop"]);
   const tws = template.workshop;
+
+  if (!params.workshop) {
+    console.error("Missing field workshop in config");
+    paramsValid = false;
+  }
 
   for (const param of WORKSHOP_VALIDATE_FIELDS) {
     if (!ws[param] || typeof ws[param] !== typeof tws[param]) {
@@ -62,7 +73,10 @@ export default async function readConfig(
       paramsValid = false;
     }
 
-    if (ws[param] === tws[param]) {
+    if (
+      ws[param] === tws[param] &&
+      !WORKSHOP_FIELDS_ALLOWED_TO_MATCH_TEMPLATE.includes(param)
+    ) {
       console.error(
         `Field ${param} in workshop config (${ws[param]}) is the same as the template (${tws[param]})`
       );
@@ -70,8 +84,13 @@ export default async function readConfig(
     }
   }
 
-  const w = params.wiring;
+  const w = params.wiring || ({} as Config["wiring"]);
   const tw = template.wiring;
+
+  if (!params.wiring) {
+    console.error("Missing field wiring in config");
+    paramsValid = false;
+  }
 
   for (const param of WIRING_VALIDATABLE_FIELDS) {
     if (!w[param] || typeof w[param] !== typeof tw[param]) {
@@ -90,7 +109,7 @@ export default async function readConfig(
   if (
     ws.modelYear &&
     parseInt(ws.modelYear) < 2003 &&
-    params.pre_2003.alphabeticalIndexURL ===
+    params.pre_2003?.alphabeticalIndexURL ===
       template.pre_2003.alphabeticalIndexURL
   ) {
     console.error(
@@ -107,5 +126,5 @@ export default async function readConfig(
     process.exit(1);
   }
 
-  return params;
+  return params as Config;
 }

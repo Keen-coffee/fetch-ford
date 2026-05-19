@@ -1,8 +1,8 @@
 {
   "workshop": {
     "environment": "prod_1_3_0000000",
-    "category": "32",
-    "CategoryDescription": "ODYXML",
+    "category": "00",
+    "CategoryDescription": "REPLACE_ME",
     "treeBookPath": "~WS00000",
     "vehicleId": "123",
     "vin": "",

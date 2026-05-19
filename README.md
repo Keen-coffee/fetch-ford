@@ -66,13 +66,15 @@ This script requires some data about your car that's not available in the PTS GU
 
 1. Open DevTools, and navigate to the Network tab.
 2. Click on the Workshop tab in PTS.
-3. Filter for the one POST to `https://www.fordservicecontent.com/Ford_Content/PublicationRuntimeRefreshPTS//publication/prod_1_3_372022/TreeAndCover/workshop/32/~WSLL/{some numbers here}`. It should look similar to the request in [this photo](img/workshop-request.png).
-4. Click on that request, and look at the sent form data (i.e. the payload).
+3. Filter for the POST to `https://www.fordservicecontent.com/Ford_Content/PublicationRuntimeRefreshPTS//publication/{environment}/TreeAndCover/workshop/{category}/{treeBookPath}/{vehicleId}`. It should look similar to the request in [this photo](img/workshop-request.png).
+4. Click that request and copy both query string params and form data values.
 5. Open [`templates/params.json`](templates/params.json), and copy/paste information from that request into the values of the JSON `.workshop` field.
-   - **Do not add fields. Only change values.**
+   - **Do not add or remove fields. Only change values.**
    - Copy-and-paste values to ensure you don't add typos.
-   - Change the values to match. You probably won't need to change anything under the line break.
-   - If you can't find the Book Title or Wiring Book Title, look in the query string parameters. **Do not leave them blank!**
+   - `environment`, `category`, and `CategoryDescription` are required.
+   - If `treeBookPath` is missing, use `~W${book}` (example: `book=S10449` -> `treeBookPath=~WS10449`).
+   - If you can't find `bookTitle` or `WiringBookTitle`, look in the query string parameters. **Do not leave them blank.**
+   - If the Proc request includes `primaryFeatureCodes[]` and `minorFeatureCodes[]`, copy them into the arrays in `params.json`.
 6. Get your wiring data: follow instructions [here](#all-vehicles-get-wiring-data).
 
 ### **2002 or older:** Get data for your car
@@ -161,13 +163,17 @@ The folder structure in the output directory will mimic the structure on PTS, so
 
 The `cover.html` file contains the book's cover and a table of contents laid out in bullet points. The tree of those bullet points directly maps to the file structure of the downloaded manual, and links in the table of contents point to local downloaded PDFs so you can browse from the cover page.
 
-The `cover-link-index.json` file contains linkable data generated from the cover page table of contents. Each entry includes the page title, `docID`, and local relative output path.
+The `cover-link-index.json` file contains linkable data generated from the cover page table of contents.
+
+The `workshop-tree.json` file contains the parsed full workshop tree (branches and leaves) from `wsm-tree`/`treeNodesDiv`.
+
+The `workshop-download-index.json` file is the master list of all downloadable workshop entries, including each item's tree path and local output path.
 
 If you run with `--saveHTML`, workshop page HTML files are also rewritten for local navigation where possible: in-page links that point to known workshop documents are converted to local file links.
 
 The `workshop-browser.html` file provides a local PTS-like layout: a chapter/navigation tree on one side and a content pane on the other. Open this file to browse downloaded content similarly to the Workshop view in PTS.
 
-The `toc.json` file contains the computer-readable table of contents, with the name mapped to the "document number", which is used to fetch the PDF.
+The `toc.json` file contains a simplified computer-readable table of contents (name to `searchNumber`/entry ID mapping).
 
 #### Truncated filenames
 

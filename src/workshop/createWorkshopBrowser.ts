@@ -1,17 +1,24 @@
 import { writeFile } from "fs/promises";
 import { join } from "path";
-import { CoverLinkEntry } from "./fetchTreeAndCover";
+import { WorkshopTreeNode, WorkshopDownloadEntry } from "./fetchTreeAndCover";
 
 export default async function createWorkshopBrowser(
   outputPath: string,
-  toc: any,
-  coverLinkIndex: CoverLinkEntry[]
+  tree: WorkshopTreeNode[],
+  downloadIndex: WorkshopDownloadEntry[],
+  leafExtension: "pdf" | "html"
 ): Promise<void> {
-  const docIDToRelativePath = Object.fromEntries(
-    coverLinkIndex.map((entry) => [entry.docID, entry.relativePath])
+  const pathByEntryID = Object.fromEntries(
+    downloadIndex.map((entry) => [
+      entry.id,
+      leafExtension === "html"
+        ? entry.localRelativePathHtml
+        : entry.localRelativePathPdf,
+    ])
   );
-  const tocJSON = JSON.stringify(toc).replaceAll("</script", "<\\/script");
-  const docIDMapJSON = JSON.stringify(docIDToRelativePath).replaceAll(
+
+  const treeJSON = JSON.stringify(tree).replaceAll("</script", "<\\/script");
+  const pathMapJSON = JSON.stringify(pathByEntryID).replaceAll(
     "</script",
     "<\\/script"
   );
@@ -29,7 +36,6 @@ export default async function createWorkshopBrowser(
         --line: #d6dbe1;
         --ink: #182230;
         --muted: #5d6978;
-        --accent: #0f5ca8;
       }
 
       * {
@@ -95,7 +101,7 @@ export default async function createWorkshopBrowser(
       }
 
       .nav {
-        width: 420px;
+        width: 440px;
         min-width: 280px;
         max-width: 50vw;
         background: var(--panel);
@@ -186,6 +192,11 @@ export default async function createWorkshopBrowser(
         font-weight: 600;
       }
 
+      .leaf.disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
       .hidden {
         display: none !important;
       }
@@ -233,8 +244,8 @@ export default async function createWorkshopBrowser(
     </div>
 
     <script>
-      const toc = ${tocJSON};
-      const docIDToPath = ${docIDMapJSON};
+      const tree = ${treeJSON};
+      const pathByEntryID = ${pathMapJSON};
 
       const treeRoot = document.getElementById("tree");
       const viewer = document.getElementById("viewer");
@@ -242,13 +253,13 @@ export default async function createWorkshopBrowser(
       const filterInput = document.getElementById("filter");
       let activeLeaf = null;
 
-      function createBranch(title, value) {
+      function createBranch(node) {
         const li = document.createElement("li");
         li.className = "branch";
 
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.textContent = title;
+        btn.textContent = node.title;
         li.appendChild(btn);
 
         const list = document.createElement("ul");
@@ -258,39 +269,40 @@ export default async function createWorkshopBrowser(
           li.classList.toggle("open");
         });
 
-        Object.entries(value).forEach(([childTitle, childValue]) => {
-          list.appendChild(createNode(childTitle, childValue));
+        node.children.forEach((child) => {
+          list.appendChild(createNode(child));
         });
 
         return li;
       }
 
-      function createLeaf(title, docID) {
+      function createLeaf(node) {
         const li = document.createElement("li");
         const button = document.createElement("button");
         button.type = "button";
         button.className = "leaf";
-        button.textContent = title;
+        button.textContent = node.title;
 
-        const localPath = docIDToPath[docID];
+        const localPath = pathByEntryID[node.id];
         if (!localPath) {
+          button.classList.add("disabled");
           button.disabled = true;
           button.title = "No local file mapped for this entry";
-          button.style.opacity = "0.6";
-          button.style.cursor = "not-allowed";
         }
 
         button.addEventListener("click", () => {
-          if (!localPath) return;
+          if (!localPath) {
+            return;
+          }
 
           if (activeLeaf) {
             activeLeaf.classList.remove("active");
           }
+
           activeLeaf = button;
           activeLeaf.classList.add("active");
 
-          const encodedPath = encodeURI(localPath);
-          viewer.src = encodedPath;
+          viewer.src = encodeURI(localPath);
           currentPath.textContent = localPath;
         });
 
@@ -298,15 +310,16 @@ export default async function createWorkshopBrowser(
         return li;
       }
 
-      function createNode(title, value) {
-        if (typeof value === "string") {
-          return createLeaf(title, value);
+      function createNode(node) {
+        if (node.kind === "leaf") {
+          return createLeaf(node);
         }
-        return createBranch(title, value);
+
+        return createBranch(node);
       }
 
-      Object.entries(toc).forEach(([title, value]) => {
-        treeRoot.appendChild(createNode(title, value));
+      tree.forEach((node) => {
+        treeRoot.appendChild(createNode(node));
       });
 
       document.getElementById("openCover").addEventListener("click", () => {
@@ -314,12 +327,16 @@ export default async function createWorkshopBrowser(
         currentPath.textContent = "cover.html";
       });
 
-      document.getElementById("clearSelection").addEventListener("click", () => {
-        if (activeLeaf) {
+      document
+        .getElementById("clearSelection")
+        .addEventListener("click", () => {
+          if (!activeLeaf) {
+            return;
+          }
+
           activeLeaf.classList.remove("active");
           activeLeaf = null;
-        }
-      });
+        });
 
       filterInput.addEventListener("input", () => {
         const query = filterInput.value.trim().toLowerCase();
@@ -333,19 +350,18 @@ export default async function createWorkshopBrowser(
           return;
         }
 
-        // Hide leaves first based on text match.
         const leaves = treeRoot.querySelectorAll(".leaf");
         leaves.forEach((leaf) => {
           const matches = (leaf.textContent || "").toLowerCase().includes(query);
           leaf.parentElement.classList.toggle("hidden", !matches);
         });
 
-        // Show branches that have visible descendants, hide empty ones.
         const branches = Array.from(treeRoot.querySelectorAll(".branch")).reverse();
         branches.forEach((branch) => {
-          const hasVisibleChild = !!Array.from(branch.querySelectorAll(":scope > ul > li")).find(
-            (child) => !child.classList.contains("hidden")
-          );
+          const hasVisibleChild = !!Array.from(
+            branch.querySelectorAll(":scope > ul > li")
+          ).find((child) => !child.classList.contains("hidden"));
+
           branch.classList.toggle("hidden", !hasVisibleChild);
           if (hasVisibleChild) {
             branch.classList.add("open");

@@ -16,6 +16,9 @@ export interface Config {
 }
 
 const WORKSHOP_VALIDATE_FIELDS: (keyof Config["workshop"])[] = [
+  "environment",
+  "category",
+  "CategoryDescription",
   "vehicleId",
   "modelYear",
   "book",

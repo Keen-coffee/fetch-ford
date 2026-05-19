@@ -5,213 +5,442 @@ import { JSDOM } from "jsdom";
 import { basename, posix } from "path";
 import { buildManualLeafFilename, sanitizeName } from "../utils";
 
-export interface FetchTreeAndCoverParams extends FetchManualPageParams {
-  CategoryDescription: string;
-  category: string;
-}
+export interface FetchTreeAndCoverParams extends FetchManualPageParams {}
 
 interface FetchTreeAndCoverOptions {
   leafExtension?: "pdf" | "html";
 }
 
+interface FeatureHints {
+  primaryFeatureCodes: string[];
+  minorFeatureCodes: string[];
+}
+
+export interface WorkshopTreeBranch {
+  kind: "branch";
+  title: string;
+  pathSegments: string[];
+  dataGroup?: string;
+  dataId?: string;
+  dataSubSectionName?: string;
+  featureHints: FeatureHints;
+  children: WorkshopTreeNode[];
+}
+
+export interface WorkshopTreeLeaf {
+  kind: "leaf";
+  id: string;
+  title: string;
+  pathSegments: string[];
+  dataGroup?: string;
+  dataFor: string;
+  procUid?: string;
+  linkClass: string;
+  leafType: "procedure" | "url";
+  searchNumber?: string;
+  url?: string;
+  featureHints: FeatureHints;
+  localRelativePathPdf: string;
+  localRelativePathHtml: string;
+}
+
+export type WorkshopTreeNode = WorkshopTreeBranch | WorkshopTreeLeaf;
+
+export interface WorkshopDownloadEntry {
+  id: string;
+  title: string;
+  breadcrumbs: string[];
+  folderSegments: string[];
+  leafType: "procedure" | "url";
+  dataFor: string;
+  procUid?: string;
+  searchNumber?: string;
+  url?: string;
+  localRelativePathPdf: string;
+  localRelativePathHtml: string;
+  primaryFeatureCodes: string[];
+  minorFeatureCodes: string[];
+}
+
 export interface CoverLinkEntry {
   title: string;
-  docID: string;
+  entryID: string;
+  searchNumber?: string;
   relativePath: string;
+}
+
+export interface FetchTreeAndCoverResult {
+  tableOfContents: any;
+  tree: WorkshopTreeNode[];
+  pageHTML: string;
+  coverLinkIndex: CoverLinkEntry[];
+  downloadIndex: WorkshopDownloadEntry[];
 }
 
 export default async function fetchTreeAndCover(
   params: FetchTreeAndCoverParams,
   options: FetchTreeAndCoverOptions = {}
-): Promise<{ tableOfContents: any; pageHTML: string; coverLinkIndex: CoverLinkEntry[] }> {
+): Promise<FetchTreeAndCoverResult> {
+  const treeBookPath = params.treeBookPath || `~W${params.book}`;
+
   const req = await client({
     method: "POST",
-    url: `https://www.fordservicecontent.com/Ford_Content/PublicationRuntimeRefreshPTS//publication/prod_1_3_362022/TreeAndCover/workshop/${params.category}/~WS8B/${params.vehicleId}`,
+    url: `https://www.fordservicecontent.com/Ford_Content/PublicationRuntimeRefreshPTS//publication/${params.environment}/TreeAndCover/workshop/${params.category}/${treeBookPath}/${params.vehicleId}`,
     params: {
       bookTitle: params.bookTitle,
       WiringBookTitle: params.WiringBookTitle,
     },
-    data: stringify({
-      fromPageBase: "https://www.fordtechservice.dealerconnection.com",
-      isMobile: "no",
-      usertype: "Retailer",
-      ...params,
-    }),
+    data: stringify(
+      {
+        fromPageBase:
+          params.fromPageBase ||
+          "https://www.fordtechservice.dealerconnection.com",
+        isMobile: "no",
+        vin: params.vin,
+        vehicleId: params.vehicleId,
+        modelYear: params.modelYear,
+        searchNumber: "0",
+        channel: params.channel,
+        category: params.category,
+        CategoryDescription: params.CategoryDescription,
+        book: params.book,
+        booktype: params.booktype,
+        country: params.country,
+        language: params.language,
+        contentmarket: params.contentmarket,
+        contentlanguage: params.contentlanguage,
+        languageOdysseyCode: params.languageOdysseyCode,
+        contentgroup: params.contentgroup,
+        WiringBookCode: params.WiringBookCode,
+        WiringFormat: params.WiringFormat,
+        strVehLine: params.strVehLine,
+        strProdType: params.strProdType,
+      },
+      {
+        skipNulls: true,
+      }
+    ),
   });
 
-  return processTableOfContents(req.data, options.leafExtension || "pdf");
+  return processTreeAndCoverResponse(
+    req.data,
+    params,
+    options.leafExtension || "pdf"
+  );
 }
 
-// recursively ignore <i> elements with only a single <i> element inside
-function ignoreital(el: Element): HTMLCollection {
-  if (!el.children.length) {
-    console.log("children");
-
-    return el.parentElement!.children;
+function normalizeCodeList(codes: string[] | undefined): string[] {
+  if (!codes || codes.length === 0) {
+    return [];
   }
 
-  if (el.children[0].tagName === "I") {
-    return ignoreital(el.children[0]);
-  }
-
-  return el.children;
+  return Array.from(
+    new Set(
+      codes
+        .map((code) => code.trim())
+        .filter(Boolean)
+        .map((code) => code.toUpperCase())
+    )
+  );
 }
 
-function parseul(
-  objectpath: { [branchName: string]: object | string } = {},
-  ul: Element
-): object {
-  // all list items' children
-  // each item has a span and either a <ul> or an <a>
-  const items = Array.from(ul.children)
-    .filter((el) => el.tagName === "LI")
-    .map((el) => ignoreital(el));
+function parsePipeCodeList(raw: string | null): string[] {
+  if (!raw) {
+    return [];
+  }
 
-  items.forEach((i) => {
-    const iArr = Array.from(i);
+  return normalizeCodeList(raw.split("|"));
+}
 
-    const a = iArr.find((el) => el.tagName === "A");
+function mergeFeatureHints(
+  inherited: FeatureHints,
+  ownPrimary: string[],
+  ownMinor: string[]
+): FeatureHints {
+  return {
+    primaryFeatureCodes:
+      ownPrimary.length > 0 ? ownPrimary : inherited.primaryFeatureCodes,
+    minorFeatureCodes: ownMinor.length > 0 ? ownMinor : inherited.minorFeatureCodes,
+  };
+}
 
-    if (a) {
-      // we're done with this leaf of the branch
-      const name = a.textContent;
-      const docid = a.getAttribute("data-for");
+function collectDirectChildrenByTag(parent: Element, tag: string): Element[] {
+  return Array.from(parent.children).filter(
+    (child) => child.tagName.toLowerCase() === tag
+  );
+}
 
-      // @ts-ignore
-      objectpath[name] = docid;
-      // this is a foreach, equivalent to a continue;
+function getPrimaryAnchor(li: Element): HTMLAnchorElement | null {
+  const anchors = collectDirectChildrenByTag(li, "a");
+  if (anchors.length === 0) {
+    return null;
+  }
+
+  return anchors[0] as HTMLAnchorElement;
+}
+
+function getBranchSpan(li: Element): HTMLSpanElement | null {
+  const spans = collectDirectChildrenByTag(li, "span");
+  if (spans.length === 0) {
+    return null;
+  }
+
+  return spans[0] as HTMLSpanElement;
+}
+
+function getBranchChildList(li: Element): HTMLUListElement | null {
+  const uls = collectDirectChildrenByTag(li, "ul");
+  if (uls.length === 0) {
+    return null;
+  }
+
+  return uls[0] as HTMLUListElement;
+}
+
+function isUrlLike(value: string): boolean {
+  return value.startsWith("http://") || value.startsWith("https://") || value.startsWith("/");
+}
+
+function buildLeafRelativePaths(
+  folderSegments: string[],
+  title: string,
+  leafType: "procedure" | "url",
+  dataFor: string,
+  searchNumber?: string,
+  url?: string
+): { localRelativePathPdf: string; localRelativePathHtml: string } {
+  if (leafType === "procedure") {
+    const leafID = searchNumber || dataFor;
+    const filename = buildManualLeafFilename(title, leafID);
+
+    return {
+      localRelativePathPdf: posix.join(...folderSegments, `${filename}.pdf`),
+      localRelativePathHtml: posix.join(...folderSegments, `${filename}.html`),
+    };
+  }
+
+  const isPdfURL = !!url && /\.pdf(?:$|\?)/i.test(url);
+  if (isPdfURL && url) {
+    const urlPath = url.startsWith("http") ? new URL(url).pathname : url;
+    const baseName = basename(urlPath) || `${buildManualLeafFilename(title, dataFor)}.pdf`;
+
+    return {
+      localRelativePathPdf: posix.join(...folderSegments, baseName),
+      localRelativePathHtml: posix.join(
+        ...folderSegments,
+        `${buildManualLeafFilename(title, dataFor)}.html`
+      ),
+    };
+  }
+
+  const htmlName = buildManualLeafFilename(title, dataFor);
+  return {
+    localRelativePathPdf: posix.join(...folderSegments, `${htmlName}.pdf`),
+    localRelativePathHtml: posix.join(...folderSegments, `${htmlName}.html`),
+  };
+}
+
+function parseTreeList(
+  ul: Element,
+  parentPath: string[],
+  inheritedHints: FeatureHints,
+  downloadIndex: WorkshopDownloadEntry[]
+): WorkshopTreeNode[] {
+  const nodes: WorkshopTreeNode[] = [];
+  const liChildren = collectDirectChildrenByTag(ul, "li");
+
+  liChildren.forEach((li) => {
+    const dataGroup = li.getAttribute("data-group") || undefined;
+    const dataId = li.getAttribute("data-id") || undefined;
+    const dataSubSectionName = li.getAttribute("data-subSectionName") || undefined;
+
+    const anchor = getPrimaryAnchor(li);
+    if (anchor) {
+      const title = anchor.textContent?.trim() || "Untitled";
+      const dataFor = (anchor.getAttribute("data-for") || "").trim();
+      const procUid = (anchor.getAttribute("data-procuid") || "").trim() || undefined;
+      const linkClass = anchor.className || "";
+      const leafType: "procedure" | "url" = isUrlLike(dataFor)
+        ? "url"
+        : "procedure";
+      const searchNumber = leafType === "procedure" ? dataFor : undefined;
+      const url = leafType === "url" ? dataFor : undefined;
+      const folderSegments = parentPath.map((segment) => sanitizeName(segment));
+      const paths = buildLeafRelativePaths(
+        folderSegments,
+        title,
+        leafType,
+        dataFor,
+        searchNumber,
+        url
+      );
+      const entryID = `${folderSegments.join("/")}::${dataFor}::${procUid || ""}`;
+
+      const leafNode: WorkshopTreeLeaf = {
+        kind: "leaf",
+        id: entryID,
+        title,
+        pathSegments: [...parentPath],
+        dataGroup,
+        dataFor,
+        procUid,
+        linkClass,
+        leafType,
+        searchNumber,
+        url,
+        featureHints: inheritedHints,
+        localRelativePathPdf: paths.localRelativePathPdf,
+        localRelativePathHtml: paths.localRelativePathHtml,
+      };
+
+      nodes.push(leafNode);
+      downloadIndex.push({
+        id: entryID,
+        title,
+        breadcrumbs: [...parentPath, title],
+        folderSegments,
+        leafType,
+        dataFor,
+        procUid,
+        searchNumber,
+        url,
+        localRelativePathPdf: paths.localRelativePathPdf,
+        localRelativePathHtml: paths.localRelativePathHtml,
+        primaryFeatureCodes: inheritedHints.primaryFeatureCodes,
+        minorFeatureCodes: inheritedHints.minorFeatureCodes,
+      });
       return;
     }
 
-    // if no <a> detected, we have a <span> and a <ul>
-    const span = iArr.find((el) => el.tagName === "SPAN");
-    const childUl = iArr.find((el) => el.tagName === "UL");
-
-    if (!span || !childUl) {
-      throw new Error("error code 1");
+    const span = getBranchSpan(li);
+    const childList = getBranchChildList(li);
+    if (!span || !childList) {
+      return;
     }
 
-    // continue recursion
-    objectpath[span.textContent || "null-span-textcontent"] = parseul(
-      {},
-      childUl
+    const title = span.textContent?.trim() || "Untitled";
+    const ownPrimary = parsePipeCodeList(span.getAttribute("data-feature-pfcs"));
+    const ownMinor = parsePipeCodeList(span.getAttribute("data-feature-mfcs"));
+    const mergedHints = mergeFeatureHints(inheritedHints, ownPrimary, ownMinor);
+
+    const children = parseTreeList(
+      childList,
+      [...parentPath, title],
+      mergedHints,
+      downloadIndex
     );
+
+    nodes.push({
+      kind: "branch",
+      title,
+      pathSegments: [...parentPath],
+      dataGroup,
+      dataId,
+      dataSubSectionName,
+      featureHints: mergedHints,
+      children,
+    });
   });
 
-  return objectpath;
+  return nodes;
 }
 
-interface TableOfContentsLeaf {
-  [documentName: string]: string;
+function buildSimpleTableOfContents(tree: WorkshopTreeNode[]): any {
+  const out: Record<string, any> = {};
+
+  tree.forEach((node) => {
+    if (node.kind === "leaf") {
+      out[node.title] = node.searchNumber || node.dataFor;
+      return;
+    }
+
+    out[node.title] = buildSimpleTableOfContents(node.children);
+  });
+
+  return out;
 }
 
-function processTableOfContents(toc: string, leafExtension: "pdf" | "html"): {
-  tableOfContents: any;
-  pageHTML: string;
-  coverLinkIndex: CoverLinkEntry[];
-} {
-  const { window } = new JSDOM(toc);
-  const document = window.document;
+function processTreeAndCoverResponse(
+  html: string,
+  params: FetchTreeAndCoverParams,
+  leafExtension: "pdf" | "html"
+): FetchTreeAndCoverResult {
+  const dom = new JSDOM(html);
+  const document = dom.window.document;
 
-  const tree = document.getElementsByClassName("tree")[0];
-  const parsed = parseul({}, tree);
-  const coverLinkIndex = buildCoverLinkIndex(parsed, [], leafExtension);
+  const treeRoot = document.querySelector("#treeNodesDiv > ul.tree");
+  if (!treeRoot) {
+    throw new Error("Could not find workshop tree root (#treeNodesDiv > ul.tree)");
+  }
 
-  const linkByDocID = new Map<string, string>();
-  coverLinkIndex.forEach((entry) => {
-    if (!linkByDocID.has(entry.docID)) {
-      linkByDocID.set(entry.docID, entry.relativePath);
+  const downloadIndex: WorkshopDownloadEntry[] = [];
+  const defaultFeatureHints: FeatureHints = {
+    primaryFeatureCodes: normalizeCodeList(params.primaryFeatureCodes),
+    minorFeatureCodes: normalizeCodeList(params.minorFeatureCodes),
+  };
+
+  const parsedTree = parseTreeList(treeRoot, [], defaultFeatureHints, downloadIndex);
+  const tableOfContents = buildSimpleTableOfContents(parsedTree);
+
+  const pathBySearchNumber = new Map<string, string>();
+  const pathByDataFor = new Map<string, string>();
+
+  downloadIndex.forEach((entry) => {
+    const relativePath =
+      leafExtension === "html" ? entry.localRelativePathHtml : entry.localRelativePathPdf;
+
+    pathByDataFor.set(entry.dataFor, relativePath);
+    if (entry.searchNumber) {
+      pathBySearchNumber.set(entry.searchNumber.toUpperCase(), relativePath);
     }
   });
 
   document.querySelectorAll("a[data-for]").forEach((anchor) => {
-    const docID = anchor.getAttribute("data-for");
-    if (!docID) return;
+    const dataFor = anchor.getAttribute("data-for");
+    if (!dataFor) {
+      return;
+    }
 
-    const relativePath = linkByDocID.get(docID);
-    if (!relativePath) return;
+    const normalizedDataFor = dataFor.trim();
+    const searchPath = pathBySearchNumber.get(normalizedDataFor.toUpperCase());
+    const dataForPath = pathByDataFor.get(normalizedDataFor);
+    const relativePath = searchPath || dataForPath;
+
+    if (!relativePath) {
+      return;
+    }
 
     anchor.setAttribute("href", encodeURI(relativePath));
     anchor.setAttribute("target", "_self");
     anchor.removeAttribute("onclick");
   });
 
-  // Remove non-functional PTS-only controls and add a local navigation note.
-  const imageElement = document.getElementById("imgCollapseTreeDiv");
-  imageElement?.insertAdjacentHTML(
-    "afterend",
-    "<h1><strong>Links below open local downloaded files.</strong></h1><p>This table of contents is now linkable for local browsing. " +
-      "Manual downloaded using <a href='https://github.com/iamtheyammer/fetch-ford-service-manuals'>iamtheyammer's Ford manual downloader.</a> " +
-      "Refer to the README for more information.</p>"
-  );
-  imageElement?.remove();
+  const treeContainer = document.getElementById("wsm-tree");
+  if (treeContainer) {
+    treeContainer.removeAttribute("style");
+  }
 
-  // reveal the table of contents
-  document.getElementById("wsm-tree")?.attributes.removeNamedItem("style");
-
-  return {
-    tableOfContents: parsed,
-    pageHTML: document.documentElement.outerHTML,
-    coverLinkIndex,
-  };
-}
-
-function buildCoverLinkIndex(
-  node: any,
-  parentSegments: string[] = [],
-  leafExtension: "pdf" | "html" = "pdf"
-): CoverLinkEntry[] {
-  const out: CoverLinkEntry[] = [];
-
-  Object.entries(node).forEach(([name, value]) => {
-    if (typeof value === "string") {
-      const docID = value;
-      const relativePath = getLocalRelativePath(
-        parentSegments,
-        name,
-        docID,
-        leafExtension
-      );
-      if (!relativePath) return;
-
-      out.push({
-        title: name,
-        docID,
-        relativePath,
-      });
-      return;
-    }
-
-    const nextSegments = [...parentSegments, sanitizeName(name)];
-    out.push(...buildCoverLinkIndex(value, nextSegments, leafExtension));
-  });
-
-  return out;
-}
-
-function getLocalRelativePath(
-  parentSegments: string[],
-  title: string,
-  docID: string,
-  leafExtension: "pdf" | "html"
-): string | null {
-  if (docID.startsWith("http") && docID.includes(".pdf")) {
-    if (leafExtension === "pdf") {
-      return posix.join(...parentSegments, basename(docID));
-    }
-
-    // In HTML-only mode, direct PDF leaves are represented by local HTML wrappers.
-    return posix.join(
-      ...parentSegments,
-      `${buildManualLeafFilename(title, docID)}.html`
+  const introTarget = document.getElementById("imgCollapseTreeDiv");
+  if (introTarget) {
+    introTarget.insertAdjacentHTML(
+      "afterend",
+      "<p><strong>Local navigation enabled.</strong> Links in this tree open downloaded files in your output folder.</p>"
     );
   }
 
-  if (docID.includes("/")) {
-    // These are relative/unsupported leaves that are skipped during save.
-    return null;
-  }
+  const coverLinkIndex: CoverLinkEntry[] = downloadIndex.map((entry) => ({
+    title: entry.title,
+    entryID: entry.id,
+    searchNumber: entry.searchNumber,
+    relativePath:
+      leafExtension === "html" ? entry.localRelativePathHtml : entry.localRelativePathPdf,
+  }));
 
-  const filename = `${buildManualLeafFilename(title, docID)}.${leafExtension}`;
-  return posix.join(...parentSegments, filename);
+  return {
+    tableOfContents,
+    tree: parsedTree,
+    pageHTML: dom.serialize(),
+    coverLinkIndex,
+    downloadIndex,
+  };
 }

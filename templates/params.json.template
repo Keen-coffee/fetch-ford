@@ -1,6 +1,11 @@
 {
   "workshop": {
+    "environment": "prod_1_3_0000000",
+    "category": "32",
+    "CategoryDescription": "ODYXML",
+    "treeBookPath": "~WS00000",
     "vehicleId": "123",
+    "vin": "",
     "modelYear": "0000",
     "channel": "9",
     "book": "S0X",
@@ -14,10 +19,22 @@
     "contentmarket": "US",
     "contentlanguage": "EN",
     "languageOdysseyCode": "ENUSA",
-    "searchNumber": "0",
+    "contentgroup": "",
+    "WiringFormat": "",
+    "fromPageBase": "https://www.fordtechservice.dealerconnection.com",
+    "strVehLine": "",
+    "strProdType": "",
+    "usertype": "Retailer",
+    "userQsPilot": "||",
+    "adt": "",
+    "diagTool": "",
+    "otx": "",
+    "adtLocation": "",
     "Vid": "CZF",
     "byvin": "NO",
-    "marketGroup": "NA"
+    "marketGroup": "NA",
+    "primaryFeatureCodes": [],
+    "minorFeatureCodes": []
   },
   "wiring": {
     "environment": "",

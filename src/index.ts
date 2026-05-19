@@ -216,21 +216,41 @@ async function modernWorkshop(
   console.log("Downloading and processing table of contents...");
   const tocFetchParams: FetchTreeAndCoverParams = {
     ...config.workshop,
-    CategoryDescription: "GSIXML",
-    category: "33",
   };
-  const { tableOfContents, pageHTML, coverLinkIndex } =
+  const { tableOfContents, tree, pageHTML, coverLinkIndex, downloadIndex } =
     await fetchTreeAndCover(tocFetchParams, {
       leafExtension: restArgs.htmlOnly ? "html" : "pdf",
     });
 
   const docIDToRelativePath = Object.fromEntries(
-    coverLinkIndex.map((entry) => [entry.docID, entry.relativePath])
+    downloadIndex.flatMap((entry) => {
+      const relativePath = restArgs.htmlOnly
+        ? entry.localRelativePathHtml
+        : entry.localRelativePathPdf;
+
+      const keys = [entry.id, entry.dataFor, entry.dataFor.toUpperCase()];
+      if (entry.searchNumber) {
+        keys.push(entry.searchNumber, entry.searchNumber.toUpperCase());
+      }
+      if (entry.procUid) {
+        keys.push(entry.procUid, entry.procUid.toUpperCase());
+      }
+
+      return keys.map((key) => [key, relativePath] as const);
+    })
   );
 
   await writeFile(
     join(outputPath, "toc.json"),
     JSON.stringify(tableOfContents, null, 2)
+  );
+  await writeFile(
+    join(outputPath, "workshop-tree.json"),
+    JSON.stringify(tree, null, 2)
+  );
+  await writeFile(
+    join(outputPath, "workshop-download-index.json"),
+    JSON.stringify(downloadIndex, null, 2)
   );
   const coverPath = join(outputPath, "cover");
   await writeFile(coverPath + ".html", pageHTML);
@@ -238,7 +258,7 @@ async function modernWorkshop(
   console.log("Saving manual files...");
   await saveEntireManual(
     outputPath,
-    tableOfContents,
+    downloadIndex,
     config.workshop,
     browserPage,
     {
@@ -253,7 +273,12 @@ async function modernWorkshop(
     JSON.stringify(coverLinkIndex, null, 2)
   );
 
-  await createWorkshopBrowser(outputPath, tableOfContents, coverLinkIndex);
+  await createWorkshopBrowser(
+    outputPath,
+    tree,
+    downloadIndex,
+    restArgs.htmlOnly || restArgs.saveHTML ? "html" : "pdf"
+  );
 }
 
 async function pre2003Workshop(

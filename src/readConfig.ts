@@ -53,7 +53,7 @@ export default async function readConfig(
     console.error(
       `Your params.json file couldn't be validated because the template file couldn't be found at ${templatePath}.`
     );
-    return params;
+    return params as Config;
   }
 
   const templateContent = await readFile(templatePath, { encoding: "utf-8" });

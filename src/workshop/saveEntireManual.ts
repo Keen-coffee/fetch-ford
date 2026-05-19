@@ -146,6 +146,29 @@ function extractLookupKeysFromAnchor(anchor: HTMLAnchorElement): string[] {
   return Array.from(new Set(keys));
 }
 
+function extractHashFragmentFromAnchor(anchor: HTMLAnchorElement): string {
+  const hrefAttr = (anchor.getAttribute("href") || "").trim();
+  if (hrefAttr.startsWith("#") && hrefAttr.length > 1) {
+    return hrefAttr;
+  }
+
+  if (hrefAttr.includes("#")) {
+    const idx = hrefAttr.indexOf("#");
+    const fragment = hrefAttr.slice(idx);
+    if (fragment.length > 1) {
+      return fragment;
+    }
+  }
+
+  const onclick = anchor.getAttribute("onclick") || "";
+  const onclickHashMatch = onclick.match(/#([A-Za-z0-9_\-:]+)/);
+  if (onclickHashMatch?.[1]) {
+    return `#${onclickHashMatch[1]}`;
+  }
+
+  return "";
+}
+
 function preparePageHTMLForLocalBrowsing(
   html: string,
   currentFolderPath: string,
@@ -175,6 +198,7 @@ function preparePageHTMLForLocalBrowsing(
   document.querySelectorAll("a").forEach((anchorEl) => {
     const anchor = anchorEl as HTMLAnchorElement;
     const lookupKeys = extractLookupKeysFromAnchor(anchor);
+    const fragment = extractHashFragmentFromAnchor(anchor);
     const targetRelativePathFromRoot = lookupKeys
       .map((key) => normalizedDocPathMap[key])
       .find(Boolean);
@@ -189,8 +213,11 @@ function preparePageHTMLForLocalBrowsing(
     );
     const relativeTargetPath = relative(currentFolderPath, absoluteTargetPath)
       .replaceAll("\\", "/");
+    const rewrittenTarget = fragment
+      ? `${relativeTargetPath}${fragment}`
+      : relativeTargetPath;
 
-    anchor.setAttribute("href", encodeURI(relativeTargetPath));
+    anchor.setAttribute("href", encodeURI(rewrittenTarget));
     anchor.setAttribute("target", "_self");
     anchor.removeAttribute("onclick");
   });

@@ -10,9 +10,10 @@ import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import { Page } from "playwright";
 import { FetchManualPageParams } from "../workshop/fetchManualPage";
-import savePage, { WiringFetchPageParams } from "./savePage";
+import savePage, { WiringFetchPageParams, WiringSaveOptions } from "./savePage";
 import saveConnector from "./saveConnector";
 import { saveLocIndex } from "./saveLocIndex";
+import createWiringBrowser from "./createWiringBrowser";
 
 export default async function saveEntireWiring(
   path: string,
@@ -20,7 +21,8 @@ export default async function saveEntireWiring(
   fetchWiringParams: WiringFetchParams,
   toc: WiringTableOfContentsEntry[],
   browserPage: Page,
-  ignoreSaveErrors: boolean = false
+  ignoreSaveErrors: boolean = false,
+  options: WiringSaveOptions = {}
 ) {
   const wiringPath = join(path, "Wiring");
   try {
@@ -69,9 +71,22 @@ export default async function saveEntireWiring(
 
     try {
       if (isPage(doc) || isBasicPage(doc)) {
-        await savePage(wiringFetchParams, doc, browserPage, sectionPath, ignoreSaveErrors);
+        await savePage(
+          wiringFetchParams,
+          doc,
+          browserPage,
+          sectionPath,
+          ignoreSaveErrors,
+          options
+        );
       } else if (isConnectors(doc)) {
-        await saveConnector(wiringFetchParams, doc, browserPage, connectorPath);
+        await saveConnector(
+          wiringFetchParams,
+          doc,
+          browserPage,
+          connectorPath,
+          options
+        );
       } else if (isLocIndex(doc)) {
         await saveLocIndex(wiringFetchParams, doc, connectorPath);
       } else {
@@ -86,5 +101,9 @@ export default async function saveEntireWiring(
         throw e;
       }
     }
+  }
+
+  if (options.saveHTML || options.htmlOnly) {
+    await createWiringBrowser(path, toc);
   }
 }

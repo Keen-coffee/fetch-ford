@@ -196,7 +196,11 @@ async function run({
       wiringParams,
       wiringToC,
       wiringPage,
-      restArgs.ignoreSaveErrors
+      restArgs.ignoreSaveErrors,
+      {
+        saveHTML: restArgs.saveHTML,
+        htmlOnly: restArgs.htmlOnly,
+      }
     );
   } else {
     console.log("Skipping wiring manual download.");
